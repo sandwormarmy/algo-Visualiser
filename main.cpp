@@ -7,13 +7,20 @@
 #include <optional>
 #include <algorithm>
 
-const int WINDOW_WIDTH = 800;
-const int WINDOW_HEIGHT = 600;
+//TODO scaling fix
+const int WINDOW_WIDTH = 1600;
+const int WINDOW_HEIGHT = 900;
 //TODO MAybe dynamic
-const int BAR_WIDTH = 5;
-const int SPACING = 0;
-const int PADDINGTOP = 50;
-const int PADDINGBOT = 20;
+int BAR_WIDTH = 5;
+int SPACING = 0;
+int PADDINGTOP = 50;
+int PADDINGBOT = 20;
+
+sf::Color barColor = sf::Color::Red;
+sf::Color outlineColor = sf::Color::White;
+sf::Color backgroundColor = sf::Color::Black;
+
+int RENDERDELAY = 0;
 
 const std::string SampleDataFile= "sampleData.txt"; //filename for input data
 
@@ -43,6 +50,8 @@ int mainConsoleDialog(sf::RenderWindow*);
 // sub Dialog of mainConsoleDialog
 // Displays Dialog for selection and execution of single alorithems
 int algoConsoleDialog(sf::RenderWindow*);
+
+int settingsDialog();
 
 //load Samples from file to local vector
 void loadSamples();
@@ -85,7 +94,7 @@ int main() {
 void renderSample(sf::RenderWindow* window) {
     if (samples.empty()) return;
     //window->setActive(true);
-    window->clear(sf::Color::Black);
+    window->clear(backgroundColor);
 
     //max height we can display on
     const int maxHeight = window->getSize().y - PADDINGBOT - PADDINGTOP;
@@ -104,10 +113,9 @@ void renderSample(sf::RenderWindow* window) {
         sf::RectangleShape bar(sf::Vector2f(BAR_WIDTH, height));
         //positions rectangel at
         bar.setPosition({i * distance,   WINDOW_HEIGHT -height -PADDINGBOT});
-
-        bar.setFillColor(sf::Color::Red);
+        bar.setFillColor(barColor);
         bar.setOutlineThickness(0.05);
-        bar.setOutlineColor(sf::Color::White);
+        bar.setOutlineColor(outlineColor);
         window->draw(bar);
     }
 
@@ -115,27 +123,32 @@ void renderSample(sf::RenderWindow* window) {
 }
 
 void bubbleSort(sf::RenderWindow* window) {
+
+    auto start = std::chrono::high_resolution_clock::now();
     int n = samples.size();
     bool swapped;
-    bool done = false;
 
-    while (!done) {
-        swapped = false;
-        for (int i = 0; i < n - 1; i++) {
+    for (int i = 0; i < n - 1; i++) {
+            swapped = false;
             for (int j = 0; j < n - i - 1; j++) {
                 if (samples[j] > samples[j + 1]) {
                     std::swap(samples[j], samples[j + 1]);
                     swapped = true;
                 }
-
+                //render the change
                 renderSample(window);
-                sf::sleep(sf::milliseconds(100));
+                if (RENDERDELAY >0) {
+                    sf::sleep(sf::milliseconds(RENDERDELAY));
+                }
             }
-        }
-        if (!swapped) break;
+        // If no two elements were swapped, then break
+        if (!swapped)break;
     }
 
-    std::cout << "sorted" << std::endl;
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end - start;
+
+    std::cout << "Bubble Sort took " << elapsed.count() << " seconds." << std::endl;
 }
 
 void sleepSort(sf::RenderWindow*) {
@@ -179,8 +192,8 @@ int mainConsoleDialog(sf::RenderWindow* window) {
         "0: exit\n" <<
         "1: Generate new Sample Data\n"<<
         "2: Animate spezific Algorithem\n"<<
-        "3: Animate everything"<<std::endl;
-
+        "3: Animate everything\n"<<
+        "9: Settings\n"<<std::endl;
         std::cin >> input;
 
         switch(input){
@@ -202,6 +215,7 @@ int mainConsoleDialog(sf::RenderWindow* window) {
                 std::cout <<"how many numbers:" << std::endl;
                 std::cin >> n;
 
+                // create Data load into local array and render changes
                 createSampleData(min,max,n);
                 loadSamples();
                 renderSample(window);
@@ -209,12 +223,15 @@ int mainConsoleDialog(sf::RenderWindow* window) {
             }
             //generate spezific Algo
             case 2:
-                return algoConsoleDialog(window);
+                algoConsoleDialog(window);
             break;
             //generate "all" Algos
             case 3:
                 // TODO run all maybe dosnt work will see
-                return 0;
+                    std::cout << "nö"<<std::endl;
+            //settings
+            case 9:
+                settingsDialog();
             break;
             default:
                 std::cout << "Digga was soll das mach doch einfach vernünftig"<<std::endl;
@@ -257,6 +274,67 @@ int algoConsoleDialog(sf::RenderWindow* window){
             default:
                 std::cout << "Digga was soll das mach doch einfach vernünftig"<<std::endl;
         }       
+    }
+}
+
+//TODO error handling
+//TODO input controll
+int settingsDialog() {
+    int input = -1;
+
+    while (true) {
+        input = -1;
+        std::cout << "What do you want to do?\n"
+                  << "0: Back\n"
+                  << "1: Change Background Color\n"
+                  << "2: Change Bar Color\n"
+                  << "3: Change Bar-Outline Color\n"
+                  << "4: Change Padding Top\n"
+                  << "5: Change Padding Bottom\n"
+                  << "6: Change Bar Width\n"
+                  << "7: Change Spacing\n"
+                  << "8: Change render Delay time (in ms)"
+                  << std::endl;
+
+
+        std::cin >> input;
+        switch (input) {
+            case 0:
+                return 0;
+            case 1:
+                std::cout << "Enter RGB values for Background Color: ";
+                std::cin >> backgroundColor.r >> backgroundColor.g >> backgroundColor.b;
+            break;
+            case 2:
+                std::cout << "Enter RGB values for Bar Color: ";
+                std::cin >> barColor.r >> barColor.g >> barColor.b;
+            break;
+            case 3:
+                std::cout << "Enter RGB values for Bar-Outline Color: ";
+                std::cin >> outlineColor.r >> outlineColor.g >> outlineColor.b;
+            break;
+            case 4:
+                std::cout << "Enter new Padding Top: ";
+                std::cin >> PADDINGTOP;
+            break;
+            case 5:
+                std::cout << "Enter new Padding Bottom: ";
+                std::cin >> PADDINGBOT;
+            break;
+            case 6:
+                std::cout << "Enter new Bar Width: ";
+                std::cin >> BAR_WIDTH;
+            break;
+            case 7:
+                std::cout << "Enter new Spacing: ";
+                std::cin >> SPACING;
+            break;
+            case 8:
+                std::cout << "Enter new Render Delay Time: ";
+                std::cin >> RENDERDELAY;
+            default:
+                std::cout << "Invalid option. Please try again." << std::endl;
+        }
     }
 }
 
