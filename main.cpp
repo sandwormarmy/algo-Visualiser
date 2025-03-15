@@ -6,6 +6,65 @@
 #include <thread>
 #include <optional>
 #include <algorithm>
+#include <mutex>
+#include <chrono>
+#include <unistd.h>
+
+
+template <typename T>
+class ThreadSafeVector {
+private:
+    std::vector<T> vec;
+    std::mutex mtx;
+
+public:
+
+     explicit ThreadSafeVector(const std::vector<T>& other) {
+        std::lock_guard<std::mutex> lock(mtx);
+        vec = other;
+    }
+
+    void push_back(const T& value) {
+        std::lock_guard<std::mutex> lock(mtx);
+        vec.push_back(value);
+    }
+
+    bool pop_back(T& value) {
+        std::lock_guard<std::mutex> lock(mtx);
+        if (vec.empty()) return false;
+        value = vec.back();
+        vec.pop_back();
+        return true;
+    }
+
+    size_t size() const {
+        std::lock_guard<std::mutex> lock(mtx);
+        return vec.size();
+    }
+
+    // Begin Methode, gibt einen Iterator auf den Anfang des Vektors zurück
+    typename std::vector<T>::iterator begin() {
+         std::lock_guard<std::mutex> lock(mtx);
+         return vec.begin();
+     }
+
+    // End Methode, gibt einen Iterator auf das Ende des Vektors zurück
+    typename std::vector<T>::iterator end() {
+         std::lock_guard<std::mutex> lock(mtx);
+         return vec.end();
+     }
+
+    // Const Version von begin und end für den Fall, dass der Vektor konstant ist
+    typename std::vector<T>::const_iterator begin() const {
+         std::lock_guard<std::mutex> lock(mtx);
+         return vec.begin();
+     }
+
+    typename std::vector<T>::const_iterator end() const {
+         std::lock_guard<std::mutex> lock(mtx);
+         return vec.end();
+     }
+};
 
 //TODO scaling fix
 const int WINDOW_WIDTH = 1600;
@@ -31,16 +90,16 @@ const std::string SampleDataFile= "sampleData.txt"; //filename for input data
 */
 std::vector<int> samples;
 
+// sorting algos
+template <typename T>
+void bubbleSort(sf::RenderWindow*,std::vector<T>&);
+template <typename T>
+void sleepSort(sf::RenderWindow*,std::vector<T>&);
+template <typename T>
+void bongoSort(sf::RenderWindow*,std::vector<T>&);
+template <typename T>
+void quickSort(sf::RenderWindow*,std::vector<T>&);
 
-//does the sorting stuff and display stuff dunu
-void bubbleSort(sf::RenderWindow*);
-
-// sleepSort
-void sleepSort(sf::RenderWindow*);
-
-void randomSort(sf::RenderWindow*);
-//generates n Numbers in SampleData file in range min - max
-bool createSampleData(const double& min, const double& max,const int& n);
 
 /** displays user Dialog and choices what to do
  * return vals:
@@ -53,22 +112,25 @@ int algoConsoleDialog(sf::RenderWindow*);
 
 int settingsDialog();
 
+//generates n Numbers in SampleData file in range min - max
+bool createSampleData(const double& min, const double& max,const int& n);
+
 //load Samples from file to local vector
 void loadSamples();
 
 //renders sample vector als diagramm
-void renderSample(sf::RenderWindow* window);
+template <typename Iterator>
+void renderSample(sf::RenderWindow*,Iterator begin, Iterator end);
 
 
-/**
- * wilde idee
- * listener (observer Pattern) aus dem samples vektor machen (wrappen)
- *
- */
 int main() {
 
     loadSamples();
     sf::RenderWindow window(sf::VideoMode({WINDOW_WIDTH, WINDOW_HEIGHT}), "Cooles Fenster für sachen");
+
+    window.setVerticalSyncEnabled(true);
+    window.setFramerateLimit(60);
+
     // deactivate its OpenGL context
     window.display();
     (void)window.setActive(false);
@@ -87,32 +149,32 @@ int main() {
     }
 
     consoleThread.join();
+
     return 0;
 }
 
 //TODO Schoener machen
-void renderSample(sf::RenderWindow* window) {
-    if (samples.empty()) return;
-    //window->setActive(true);
+/*
+ *optional parameter input if null global sample is used
+ **/
+
+template <typename Iterator>
+void renderSample(sf::RenderWindow* window, Iterator begin, Iterator end) {
+    (void)window->setActive(true);
+    if (begin == end ) {return;}
+
     window->clear(backgroundColor);
 
-    //max height we can display on
     const int maxHeight = window->getSize().y - PADDINGBOT - PADDINGTOP;
-    //highest Value in sample
-    const int maxValue = *std::max_element(samples.begin(), samples.end());
-    //scaling for height display
-    const float scalingFactor = static_cast<float>(maxHeight) / maxValue;
-    //margin between bars
+    const int maxValue = *(std::max_element(begin, end));
+    const float scalingFactor = maxHeight / maxValue;
     const float distance = BAR_WIDTH + SPACING;
 
-    float height = 0;
-    for (size_t i = 0; i < samples.size(); ++i) {
-        height = scalingFactor * samples[i];
+    for (size_t i = 0; i < std::distance(begin, end); ++i) {
+        float height = scalingFactor * *(begin + i);
 
-        //defines a BAR_WIDTH x height Rectangle
         sf::RectangleShape bar(sf::Vector2f(BAR_WIDTH, height));
-        //positions rectangel at
-        bar.setPosition({i * distance,   WINDOW_HEIGHT -height -PADDINGBOT});
+        bar.setPosition({i * distance, WINDOW_HEIGHT - height - PADDINGBOT});
         bar.setFillColor(barColor);
         bar.setOutlineThickness(0.05);
         bar.setOutlineColor(outlineColor);
@@ -120,23 +182,24 @@ void renderSample(sf::RenderWindow* window) {
     }
 
     window->display();
+    (void)window->setActive(false);
 }
 
-void bubbleSort(sf::RenderWindow* window) {
+template <typename T>
+void bubbleSort(sf::RenderWindow* window,std::vector<T>& data) {
 
-    auto start = std::chrono::high_resolution_clock::now();
-    int n = samples.size();
-    bool swapped;
+    const auto start = std::chrono::high_resolution_clock::now();
+    const unsigned int n = data.size();
 
     for (int i = 0; i < n - 1; i++) {
-            swapped = false;
+            bool swapped = false;
             for (int j = 0; j < n - i - 1; j++) {
-                if (samples[j] > samples[j + 1]) {
-                    std::swap(samples[j], samples[j + 1]);
+                if (data[j] > data[j + 1]) {
+                    std::swap(data[j], data[j + 1]);
                     swapped = true;
                 }
                 //render the change
-                renderSample(window);
+                renderSample(window,data.begin(),data.end());
                 if (RENDERDELAY >0) {
                     sf::sleep(sf::milliseconds(RENDERDELAY));
                 }
@@ -145,17 +208,55 @@ void bubbleSort(sf::RenderWindow* window) {
         if (!swapped)break;
     }
 
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = end - start;
+    const auto end = std::chrono::high_resolution_clock::now();
+    const std::chrono::duration<double> elapsed = end - start;
 
     std::cout << "Bubble Sort took " << elapsed.count() << " seconds." << std::endl;
 }
 
-void sleepSort(sf::RenderWindow*) {
-    return;
+template <typename T>
+void routuine(sf::RenderWindow* window,T& n, ThreadSafeVector<T> output) {
+    try {
+        std::cout << "Bubble Sort took ";
+        std::this_thread::sleep_for(std::chrono::milliseconds(n));
+        output.push_back(n);
+        renderSample(window,output.begin(),output.end());
+    }catch (std::exception& e) {
+        std::cout << e.what() << std::endl;
+    }
 }
 
-void randomSort(sf::RenderWindow*){
+//TODO dummer scheiße geht nicht ka test nötig
+//warscheinlich neumachen
+// THREAD safe vector warscheinlich falsch
+template<typename T>
+void sleepSort(sf::RenderWindow* window, std::vector<T>& data) {
+    try {
+        std::vector<std::thread> threads;
+
+        ThreadSafeVector<T> output(data);
+        for (auto n : data) {
+            std::thread t(routuine<T>,std::ref(window), std::ref(n), output);
+            threads.emplace_back(std::move(t));
+            std::cout << "Launched thread:"<<n<<"" << std::endl;
+        }
+
+        //wait for threads to return
+        for (auto t : threads)
+        {
+            if (t.joinable())
+            {
+                t.join();
+            }
+        }
+    }catch (std::exception& e) {
+        std::cout << e.what() << std::endl;
+    }
+}
+
+
+template <typename  T>
+void bongoSort(sf::RenderWindow*,std::vector<T>&){
     return;
 }
 
@@ -218,7 +319,7 @@ int mainConsoleDialog(sf::RenderWindow* window) {
                 // create Data load into local array and render changes
                 createSampleData(min,max,n);
                 loadSamples();
-                renderSample(window);
+                renderSample(window,samples.begin(), samples.end());
             break;
             }
             //generate spezific Algo
@@ -226,9 +327,40 @@ int mainConsoleDialog(sf::RenderWindow* window) {
                 algoConsoleDialog(window);
             break;
             //generate "all" Algos
-            case 3:
-                // TODO run all maybe dosnt work will see
-                    std::cout << "nö"<<std::endl;
+            case 3: {
+                //TODO implementaion
+                //n = anzahl zu zeigender algos
+                //jedem algo einen bereich zuweisen von x,y koordinaten(einafach alle auf selbe y macht das einfacher) jeder gleiche größe; dann view dazu erstellen
+                //viewports erstellen gleiche größe possitionierung abhängig von fenster größe
+                //render funktion den offset mitgeben algo 1 = 0 offset; algo 2 500 offset(bei bereichsgröße von 500)
+                //1 offset für x achse am einfachsten sondst 2 für x und y wenn nötig
+
+                //kurz jeder algo wir auf einem bestimmten bereich gerendert; jeder viewport zeigt dann auf einen bereich
+
+               // !! wichtig threadsicherheit gewährleisten !! set active beachten
+                // sample data muss kopiert werden entweder funktion überladen oder vector parameter ; if vector == null then use sample)
+
+                (void)window->setActive(true);
+                sf::View leftView(sf::FloatRect({0, 0}, {500,500}));
+                sf::View rightView(sf::FloatRect({500, 0}, {500, 500}));
+
+                leftView.setViewport(sf::FloatRect({0.f, 0.f}, {0.5f, 1.f}));
+                rightView.setViewport(sf::FloatRect({0.5f, 0.f}, {0.5f, 1.f}));
+                window->setView(leftView);
+                sf::CircleShape circle( 100); // Größe relativ zum Fenster
+                circle.setFillColor(sf::Color::Red);
+                circle.setPosition({0, 0});
+                window->draw(circle);
+
+                window->setView(rightView);
+                sf::RectangleShape rectangle(sf::Vector2f(100, 200));
+                rectangle.setFillColor(sf::Color::Blue);
+                rectangle.setPosition({600, 100});
+                window->draw(rectangle);
+
+                window->display();
+                break;
+            }
             //settings
             case 9:
                 settingsDialog();
@@ -260,20 +392,20 @@ int algoConsoleDialog(sf::RenderWindow* window){
 
             //Bubble sort
             case 1:
-                bubbleSort(window);
+                bubbleSort(window,samples);
             break;
-            
+
             case 2:
-                sleepSort(window);
+                sleepSort(window,samples);
             break;
 
             case 3:
-                randomSort(window);
+                bongoSort(window,samples);
             break;
 
             default:
                 std::cout << "Digga was soll das mach doch einfach vernünftig"<<std::endl;
-        }       
+        }
     }
 }
 
@@ -356,3 +488,4 @@ void loadSamples(){
     inFile.close();
     std::cout << "Successfully loaded " << samples.size() << " samples from " << SampleDataFile << std::endl;
 }
+
