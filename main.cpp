@@ -10,62 +10,6 @@
 #include <chrono>
 #include <unistd.h>
 
-
-template <typename T>
-class ThreadSafeVector {
-private:
-    std::vector<T> vec;
-    std::mutex mtx;
-
-public:
-
-     explicit ThreadSafeVector(const std::vector<T>& other) {
-        std::lock_guard<std::mutex> lock(mtx);
-        vec = other;
-    }
-
-    void push_back(const T& value) {
-        std::lock_guard<std::mutex> lock(mtx);
-        vec.push_back(value);
-    }
-
-    bool pop_back(T& value) {
-        std::lock_guard<std::mutex> lock(mtx);
-        if (vec.empty()) return false;
-        value = vec.back();
-        vec.pop_back();
-        return true;
-    }
-
-    size_t size() const {
-        std::lock_guard<std::mutex> lock(mtx);
-        return vec.size();
-    }
-
-    // Begin Methode, gibt einen Iterator auf den Anfang des Vektors zurück
-    typename std::vector<T>::iterator begin() {
-         std::lock_guard<std::mutex> lock(mtx);
-         return vec.begin();
-     }
-
-    // End Methode, gibt einen Iterator auf das Ende des Vektors zurück
-    typename std::vector<T>::iterator end() {
-         std::lock_guard<std::mutex> lock(mtx);
-         return vec.end();
-     }
-
-    // Const Version von begin und end für den Fall, dass der Vektor konstant ist
-    typename std::vector<T>::const_iterator begin() const {
-         std::lock_guard<std::mutex> lock(mtx);
-         return vec.begin();
-     }
-
-    typename std::vector<T>::const_iterator end() const {
-         std::lock_guard<std::mutex> lock(mtx);
-         return vec.end();
-     }
-};
-
 //TODO scaling fix
 const int WINDOW_WIDTH = 1600;
 const int WINDOW_HEIGHT = 900;
@@ -93,8 +37,6 @@ std::vector<int> samples;
 // sorting algos
 template <typename T>
 void bubbleSort(sf::RenderWindow*,std::vector<T>&);
-template <typename T>
-void sleepSort(sf::RenderWindow*,std::vector<T>&);
 template <typename T>
 void bongoSort(sf::RenderWindow*,std::vector<T>&);
 template <typename T>
@@ -214,51 +156,48 @@ void bubbleSort(sf::RenderWindow* window,std::vector<T>& data) {
     std::cout << "Bubble Sort took " << elapsed.count() << " seconds." << std::endl;
 }
 
+template <typename  T>
+void bongoSort(sf::RenderWindow* window,std::vector<T>& vec){
+    while (!std::is_sorted(vec.begin(), vec.end())){
+        std::shuffle(samples.begin(),samples.end(),std::default_random_engine(0));
+        renderSample(window,samples.begin(),samples.end());
+    }
+}
+
+
 template <typename T>
-void routuine(sf::RenderWindow* window,T& n, ThreadSafeVector<T> output) {
-    try {
-        std::cout << "Bubble Sort took ";
-        std::this_thread::sleep_for(std::chrono::milliseconds(n));
-        output.push_back(n);
-        renderSample(window,output.begin(),output.end());
-    }catch (std::exception& e) {
-        std::cout << e.what() << std::endl;
-    }
-}
+T partition(std::vector<T>& vec, T low, T high,sf::RenderWindow* window) {
+    int pivot = vec[high];
 
-//TODO dummer scheiße geht nicht ka test nötig
-//warscheinlich neumachen
-// THREAD safe vector warscheinlich falsch
-template<typename T>
-void sleepSort(sf::RenderWindow* window, std::vector<T>& data) {
-    try {
-        std::vector<std::thread> threads;
+    int i = low-1;
 
-        ThreadSafeVector<T> output(data);
-        for (auto n : data) {
-            std::thread t(routuine<T>,std::ref(window), std::ref(n), output);
-            threads.emplace_back(std::move(t));
-            std::cout << "Launched thread:"<<n<<"" << std::endl;
+    for (int j = low; j <= high-1; j++) {
+        if (vec[j] <= pivot) {
+            i++;
+            std::swap(vec[j], vec[i]);
+            renderSample(window,samples.begin(),samples.end());
         }
-
-        //wait for threads to return
-        for (auto t : threads)
-        {
-            if (t.joinable())
-            {
-                t.join();
-            }
-        }
-    }catch (std::exception& e) {
-        std::cout << e.what() << std::endl;
     }
+    std::swap(vec[i+1], vec[high]);
+    renderSample(window,samples.begin(),samples.end());
+    return i+1;
 }
-
 
 template <typename  T>
-void bongoSort(sf::RenderWindow*,std::vector<T>&){
-    return;
+void quickSortrecursiv(sf::RenderWindow* window,std::vector<T>& vec,T low, T high) {
+    if (low < high) {
+        int pivot = partition(vec, low, high,window);
+
+        quickSortrecursiv(window, vec, low, pivot-1);
+        quickSortrecursiv(window, vec, pivot+1, high);
+    }
 }
+
+template <typename  T>
+void quickSort(sf::RenderWindow* window,std::vector<T>& vec) {
+    quickSortrecursiv(window,vec,0,static_cast<int>(vec.size()-1));
+}
+
 
 bool createSampleData(const double& min, const double& max, const int& n) {
 
@@ -379,9 +318,9 @@ int algoConsoleDialog(sf::RenderWindow* window){
         std::cout << " what do you want to do? \n" <<
         "0: back\n" <<
         "1: Bubble Sort\n"<<
-        "2: Sleep Sort \n"<<
-        "3: Random Sort"<<std::endl;
-
+        "2: Bongo Sort \n"<<
+        "3: Random Sort"<<
+        "4: quickSort"<<std::endl;
         std::cin >> input;
 
         switch(input){
@@ -396,11 +335,14 @@ int algoConsoleDialog(sf::RenderWindow* window){
             break;
 
             case 2:
-                sleepSort(window,samples);
+                bongoSort(window,samples);
             break;
 
             case 3:
                 bongoSort(window,samples);
+            break;
+            case 4:
+                quickSort(window,samples);
             break;
 
             default:
